@@ -12,16 +12,19 @@ export async function getCryptoPrices() {
   }
 
   try {
+    const headers = {};
+    if (process.env.COINGECKO_API_KEY) {
+      headers["x-cg-demo-api-key"] = process.env.COINGECKO_API_KEY;
+    }
+
     const response = await axios.get(
-      "https://api.coingecko.com/api/v3/simple/price",
+      process.env.CRYPTO_SECRET_KEY || "https://api.coingecko.com/api/v3/simple/price",
       {
         params: {
           ids: "bitcoin,ethereum",
           vs_currencies: "usd",
         },
-        headers: {
-          "x-cg-demo-api-key": process.env.COINGECKO_API_KEY, // 👈 Key goes here
-        },
+        headers,
       }
     );
 
