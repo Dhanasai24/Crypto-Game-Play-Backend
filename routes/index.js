@@ -2,11 +2,9 @@ import express from "express"
 const router = express.Router()
 import mongoose from "mongoose"
 import Player from "../models/playerModel.js"
-import Round from "../models/RoundModel.js"
 import Transaction from "../models/transaction.js"
-import { generateCrashPoint, generateMockTxHash } from "../utils/cyrptoCrashGenUtil.js"
-import { getCryptoPrices } from "../utils/cyrptoCashConvUtil.js"
-import { randomInt } from "crypto"
+import { generateMockTxHash } from "../utils/cyrptoCrashGenUtil.js"
+import { getCryptoPrices, isPricesFromFallback } from "../utils/cyrptoCashConvUtil.js"
 
 const currentRoundNumber = 1
 
@@ -14,7 +12,17 @@ router.post("/register", async (req, res) => {
   try {
     const { username, email, amount = 100 } = req.body
 
-    const prices = await getCryptoPrices()
+    let prices
+    try {
+      prices = await getCryptoPrices()
+    } catch (error) {
+      console.error("[v0] Failed to get prices during registration:", error.message)
+      return res.status(503).json({
+        message: "Service temporarily unavailable. Please try again later.",
+        error: "Price data unavailable",
+      })
+    }
+
     const wallet = {
       BTC: amount / prices.BTC,
       ETH: amount / prices.ETH,
@@ -28,10 +36,11 @@ router.post("/register", async (req, res) => {
       playerId: newPlayer._id,
       wallet,
       usdBalance: amount,
+      priceWarning: isPricesFromFallback() ? "Using estimated prices due to API limitations" : null,
     })
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Error registering player" })
+    console.error("[v0] Registration error:", err)
+    res.status(500).json({ message: "Error registering player: " + err.message })
   }
 })
 
@@ -173,7 +182,17 @@ router.post("/dice-bet", async (req, res) => {
   try {
     const { playerId, usdAmount, prediction, rollUnder = true, currency = "BTC" } = req.body
     const player = await Player.findById(playerId)
-    const prices = await getCryptoPrices()
+
+    let prices
+    try {
+      prices = await getCryptoPrices()
+    } catch (error) {
+      console.error("[v0] Price fetch failed during dice bet:", error.message)
+      return res.status(503).json({
+        message: "Unable to process bet due to price data issues. Please try again.",
+        error: "Price service unavailable",
+      })
+    }
 
     const price = prices[currency]
     const cryptoAmount = usdAmount / price
@@ -247,8 +266,8 @@ router.post("/dice-bet", async (req, res) => {
       usdBalance: player.amount,
     })
   } catch (err) {
-    console.error(err)
-    res.status(500).send("Server error")
+    console.error("[v0] Dice bet error:", err)
+    res.status(500).json({ message: "Server error: " + err.message })
   }
 })
 
@@ -256,7 +275,17 @@ router.post("/lightning-bet", async (req, res) => {
   try {
     const { playerId, usdAmount, currency = "BTC" } = req.body
     const player = await Player.findById(playerId)
-    const prices = await getCryptoPrices()
+
+    let prices
+    try {
+      prices = await getCryptoPrices()
+    } catch (error) {
+      console.error("[v0] Price fetch failed during lightning bet:", error.message)
+      return res.status(503).json({
+        message: "Unable to process bet due to price data issues. Please try again.",
+        error: "Price service unavailable",
+      })
+    }
 
     const price = prices[currency]
     const cryptoAmount = usdAmount / price
@@ -326,8 +355,8 @@ router.post("/lightning-bet", async (req, res) => {
       usdBalance: player.amount,
     })
   } catch (err) {
-    console.error(err)
-    res.status(500).send("Server error")
+    console.error("[v0] Lightning bet error:", err)
+    res.status(500).json({ message: "Server error: " + err.message })
   }
 })
 
@@ -335,7 +364,17 @@ router.post("/target-bet", async (req, res) => {
   try {
     const { playerId, usdAmount, accuracy, targets = 1, currency = "BTC" } = req.body
     const player = await Player.findById(playerId)
-    const prices = await getCryptoPrices()
+
+    let prices
+    try {
+      prices = await getCryptoPrices()
+    } catch (error) {
+      console.error("[v0] Price fetch failed during target bet:", error.message)
+      return res.status(503).json({
+        message: "Unable to process bet due to price data issues. Please try again.",
+        error: "Price service unavailable",
+      })
+    }
 
     const price = prices[currency]
     const cryptoAmount = usdAmount / price
@@ -402,19 +441,24 @@ router.post("/target-bet", async (req, res) => {
       usdBalance: player.amount,
     })
   } catch (err) {
-    console.error(err)
-    res.status(500).send("Server error")
+    console.error("[v0] Target bet error:", err)
+    res.status(500).json({ message: "Server error: " + err.message })
   }
 })
 
 router.get("/wallet/:playerId", async (req, res) => {
   try {
     const player = await Player.findById(req.params.playerId)
+
     let prices
     try {
       prices = await getCryptoPrices()
     } catch (err) {
-      return res.status(503).json({ message: "Price data unavailable. Try again later." })
+      console.error("[v0] Price fetch failed for wallet:", err.message)
+      return res.status(503).json({
+        message: "Price data temporarily unavailable. Please try again later.",
+        error: "Price service unavailable",
+      })
     }
 
     const walletUSD = {}
@@ -428,10 +472,11 @@ router.get("/wallet/:playerId", async (req, res) => {
     res.json({
       wallet: walletUSD,
       usdBalance: player.amount.toFixed(2),
+      priceSource: isPricesFromFallback() ? "estimated" : "live",
     })
   } catch (err) {
-    console.error(err)
-    res.status(500).send("Error fetching wallet")
+    console.error("[v0] Wallet fetch error:", err)
+    res.status(500).json({ message: "Error fetching wallet: " + err.message })
   }
 })
 

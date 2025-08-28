@@ -5,6 +5,7 @@ import gameRoutes from "./routes/index.js"
 import cors from "cors"
 import http from "http"
 import { Server } from "socket.io"
+import { getCryptoPrices } from "./utils/cyrptoCashConvUtil.js"
 
 // Import models and utilities needed for game logic
 import Player from "./models/playerModel.js"
@@ -59,6 +60,37 @@ app.use(
 
 app.use(express.json())
 app.use("/api/game", gameRoutes)
+
+app.get("/health", async (req, res) => {
+  try {
+    // Check database connection
+    const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected"
+
+    // Check price service
+    let priceStatus = "unknown"
+    try {
+      await getCryptoPrices()
+      priceStatus = "available"
+    } catch (error) {
+      priceStatus = "fallback"
+    }
+
+    res.json({
+      status: "healthy",
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+      priceService: priceStatus,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+    })
+  } catch (error) {
+    res.status(500).json({
+      status: "unhealthy",
+      error: error.message,
+      timestamp: new Date().toISOString(),
+    })
+  }
+})
 
 mongoose
   .connect(process.env.MONGO_URI || "mongodb://localhost:27017/cryptogame", {
@@ -288,52 +320,52 @@ io.on("connection", (socket) => {
 
   socket.on("place_lightning_bet", async (data) => {
     try {
-      const { playerId, usdAmount, currency = "BTC" } = data;
+      const { playerId, usdAmount, currency = "BTC" } = data
 
       if (!usdAmount || usdAmount <= 0) {
-        return socket.emit("bet_error", { message: "Bet amount must be positive." });
+        return socket.emit("bet_error", { message: "Bet amount must be positive." })
       }
 
-      const player = await Player.findById(playerId);
+      const player = await Player.findById(playerId)
       if (!player) {
-        return socket.emit("bet_error", { message: "Player not found." });
+        return socket.emit("bet_error", { message: "Player not found." })
       }
 
-      const mockPrices = { BTC: 30000, ETH: 2000 };
-      const price = mockPrices[currency];
-      const cryptoAmount = usdAmount / price;
+      const mockPrices = { BTC: 30000, ETH: 2000 }
+      const price = mockPrices[currency]
+      const cryptoAmount = usdAmount / price
 
       if (player.wallet[currency] < cryptoAmount || player.amount < usdAmount) {
-        return socket.emit("bet_error", { message: "Insufficient funds." });
+        return socket.emit("bet_error", { message: "Insufficient funds." })
       }
 
       // Deduct bet amount
-      player.wallet[currency] -= cryptoAmount;
-      player.amount -= usdAmount;
+      player.wallet[currency] -= cryptoAmount
+      player.amount -= usdAmount
 
       // Generate instant multiplier
-      const multipliers = [0, 0.5, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0, 25.0];
-      const weights = [25, 20, 15, 12, 10, 8, 5, 3, 1.5, 0.4, 0.1];
-      let random = Math.random() * 100;
-      let selectedMultiplier = 0;
+      const multipliers = [0, 0.5, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0, 25.0]
+      const weights = [25, 20, 15, 12, 10, 8, 5, 3, 1.5, 0.4, 0.1]
+      let random = Math.random() * 100
+      let selectedMultiplier = 0
       for (let i = 0; i < weights.length; i++) {
         if (random <= weights[i]) {
-          selectedMultiplier = multipliers[i];
-          break;
+          selectedMultiplier = multipliers[i]
+          break
         }
-        random -= weights[i];
+        random -= weights[i]
       }
 
-      const winAmount = usdAmount * selectedMultiplier;
-      const isWin = selectedMultiplier > 0;
+      const winAmount = usdAmount * selectedMultiplier
+      const isWin = selectedMultiplier > 0
 
       if (isWin) {
-        const cryptoWon = winAmount / price;
-        player.wallet[currency] += cryptoWon;
-        player.amount += winAmount;
+        const cryptoWon = winAmount / price
+        player.wallet[currency] += cryptoWon
+        player.amount += winAmount
       }
 
-      await player.save();
+      await player.save()
 
       const tx = new Transaction({
         playerId,
@@ -343,8 +375,8 @@ io.on("connection", (socket) => {
         transactionType: isWin ? "lightning_win" : "lightning_loss",
         transactionHash: generateMockTxHash(),
         priceAtTime: price,
-      });
-      await tx.save();
+      })
+      await tx.save()
 
       socket.emit("lightning_result", {
         playerId,
@@ -353,16 +385,16 @@ io.on("connection", (socket) => {
         winAmount: isWin ? winAmount : 0,
         betAmount: usdAmount,
         newBalance: player.amount,
-      });
+      })
 
       console.log(
         `[v0] Lightning bet by ${player.username} ($${usdAmount}) resulted in ${selectedMultiplier}x multiplier. Win: $${winAmount.toFixed(2)}`,
-      );
+      )
     } catch (error) {
-      console.error("[v0] Error placing lightning bet:", error);
-      socket.emit("bet_error", { message: "Failed to place bet. " + error.message });
+      console.error("[v0] Error placing lightning bet:", error)
+      socket.emit("bet_error", { message: "Failed to place bet. " + error.message })
     }
-  });
+  })
 
   socket.on("join_target_game", (data) => {
     /* ... existing logic ... */
@@ -441,8 +473,3 @@ process.on("SIGTERM", () => {
     })
   })
 })
-
-app.get("/", (req, res) => {
-  res.send("🚀 Backend is up and running!");
-});
-
