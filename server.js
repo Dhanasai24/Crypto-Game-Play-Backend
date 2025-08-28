@@ -441,3 +441,8 @@ process.on("SIGTERM", () => {
     })
   })
 })
+
+app.get("/", (req, res) => {
+  res.send("🚀 Backend is up and running!");
+});
+
