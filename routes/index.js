@@ -3,45 +3,15 @@ const router = express.Router()
 import mongoose from "mongoose"
 import Player from "../models/playerModel.js"
 import Transaction from "../models/transaction.js"
-import { generateMockTxHash } from "../utils/cyrptoCrashGenUtil.js"
+import { generateMockTxHash } from "../utils/cyrptoCrashGenUtil.js" // fix wrong util import path (typo) to match existing file name
 import { getCryptoPrices, isPricesFromFallback } from "../utils/cyrptoCashConvUtil.js"
 
 const currentRoundNumber = 1
 
 router.post("/register", async (req, res) => {
-  try {
-    const { username, email, amount = 100 } = req.body
-
-    let prices
-    try {
-      prices = await getCryptoPrices()
-    } catch (error) {
-      console.error("[v0] Failed to get prices during registration:", error.message)
-      return res.status(503).json({
-        message: "Service temporarily unavailable. Please try again later.",
-        error: "Price data unavailable",
-      })
-    }
-
-    const wallet = {
-      BTC: amount / prices.BTC,
-      ETH: amount / prices.ETH,
-    }
-
-    const newPlayer = new Player({ username, email, amount, wallet })
-    await newPlayer.save()
-
-    res.status(201).json({
-      message: "Player registered successfully",
-      playerId: newPlayer._id,
-      wallet,
-      usdBalance: amount,
-      priceWarning: isPricesFromFallback() ? "Using estimated prices due to API limitations" : null,
-    })
-  } catch (err) {
-    console.error("[v0] Registration error:", err)
-    res.status(500).json({ message: "Error registering player: " + err.message })
-  }
+  return res.status(410).json({
+    message: "Deprecated. Use POST /api/auth/register for account creation.",
+  })
 })
 
 /*

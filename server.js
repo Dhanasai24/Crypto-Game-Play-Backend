@@ -5,9 +5,9 @@ import gameRoutes from "./routes/index.js"
 import cors from "cors"
 import http from "http"
 import { Server } from "socket.io"
+import cookieParser from "cookie-parser"
 import { getCryptoPrices } from "./utils/cyrptoCashConvUtil.js"
-
-// Import models and utilities needed for game logic
+import authRoutes from "./routes/auth.js"
 import Player from "./models/playerModel.js"
 import Round from "./models/RoundModel.js"
 import Transaction from "./models/transaction.js"
@@ -19,6 +19,8 @@ dotenv.config()
 const app = express()
 const server = http.createServer(app)
 
+app.set("trust proxy", 1)
+
 const allowedOrigins = [
   "https://crypto-gameplay.netlify.app",
   "http://localhost:5173",
@@ -26,6 +28,9 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "http://127.0.0.1:3000",
 ]
+if (process.env.CLIENT_ORIGIN && !allowedOrigins.includes(process.env.CLIENT_ORIGIN)) {
+  allowedOrigins.push(process.env.CLIENT_ORIGIN)
+}
 
 const io = new Server(server, {
   cors: {
@@ -42,9 +47,7 @@ const io = new Server(server, {
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return callback(null, true)
-
       if (allowedOrigins.includes(origin)) {
         callback(null, true)
       } else {
@@ -58,15 +61,16 @@ app.use(
   }),
 )
 
+app.use(cookieParser())
 app.use(express.json())
+
+app.use("/api/auth", authRoutes)
+
 app.use("/api/game", gameRoutes)
 
 app.get("/health", async (req, res) => {
   try {
-    // Check database connection
     const dbStatus = mongoose.connection.readyState === 1 ? "connected" : "disconnected"
-
-    // Check price service
     let priceStatus = "unknown"
     try {
       await getCryptoPrices()
@@ -74,7 +78,6 @@ app.get("/health", async (req, res) => {
     } catch (error) {
       priceStatus = "fallback"
     }
-
     res.json({
       status: "healthy",
       timestamp: new Date().toISOString(),
@@ -158,7 +161,7 @@ io.on("connection", (socket) => {
   socket.join(assignedRoom)
   socket.emit("room_assigned", assignedRoom)
 
-  io.to(assignedRoom).emit("group_members", rooms[assignedRoom]) // Broadcast group members to the room
+  io.to(assignedRoom).emit("group_members", rooms[assignedRoom])
 
   socket.on("register_player", (playerId) => {
     userToRoom[playerId] = assignedRoom
@@ -339,11 +342,9 @@ io.on("connection", (socket) => {
         return socket.emit("bet_error", { message: "Insufficient funds." })
       }
 
-      // Deduct bet amount
       player.wallet[currency] -= cryptoAmount
       player.amount -= usdAmount
 
-      // Generate instant multiplier
       const multipliers = [0, 0.5, 1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0, 25.0]
       const weights = [25, 20, 15, 12, 10, 8, 5, 3, 1.5, 0.4, 0.1]
       let random = Math.random() * 100
